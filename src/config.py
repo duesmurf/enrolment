@@ -46,6 +46,10 @@ class Config:
     # Gmail settings
     GMAIL_SEARCH_QUERY = os.getenv("GMAIL_SEARCH_QUERY", "subject:enrolment has:attachment")
 
+    # Google Drive settings
+    DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "")
+    DRIVE_SEARCH_QUERY = os.getenv("DRIVE_SEARCH_QUERY", "enrolment")
+
     # Course settings
     MAX_STUDENTS_PER_COURSE = int(os.getenv("MAX_STUDENTS_PER_COURSE", "5"))
     COURSES = [
@@ -69,6 +73,8 @@ class Config:
         print(f"  Credentials Path: {cls.GOOGLE_CREDENTIALS_PATH}")
         print(f"  Token Path:       {cls.TOKEN_PATH}")
         print(f"  Gmail Query:      {cls.GMAIL_SEARCH_QUERY}")
+        print(f"  Drive Folder ID:  {cls.DRIVE_FOLDER_ID or '(not set)'}")
+        print(f"  Drive Search:     {cls.DRIVE_SEARCH_QUERY}")
         print(f"  Max per Course:   {cls.MAX_STUDENTS_PER_COURSE}")
         print(f"  Courses:          {cls.COURSES}")
         print(f"  Output Dir:       {cls.OUTPUT_DIR}")
