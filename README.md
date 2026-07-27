@@ -12,16 +12,155 @@ An AI-powered agent that connects to your Gmail inbox, retrieves student enrolme
 | IT Systems | 5 |
 | Tourism | 5 |
 
-## How It Works
+## Quick Start (Git Bash on Windows)
 
-1. **Gmail Retrieval** - Connects to Gmail via OAuth2, searches for emails with spreadsheet attachments matching your query
-2. **Document Processing** - Parses downloaded `.xlsx`, `.xls`, or `.csv` files to extract student names and course preferences
-3. **Course Allocation** - Assigns each student to a course using a preference-based algorithm (first choice prioritized, falls back to next choices if a course is full)
-4. **Output Generation** - Produces a placement summary file (`S/N`, `Name`, `Course`) in Excel and/or CSV format
+```bash
+# 1. Clone the repository
+git clone https://github.com/duesmurf/enrolment.git
+cd enrolment
+
+# 2. Run the setup script
+bash setup.sh
+
+# 3. Place your Google credentials
+cp ~/Downloads/credentials.json credentials/
+
+# 4. Test it works
+python main.py --demo
+
+# 5. Run the full pipeline
+python main.py
+```
+
+## Quick Start (Windows CMD / PowerShell)
+
+```cmd
+REM 1. Clone the repository
+git clone https://github.com/duesmurf/enrolment.git
+cd enrolment
+
+REM 2. Run the setup script
+setup.bat
+
+REM 3. Place your Google credentials
+copy %USERPROFILE%\Downloads\credentials.json credentials\
+
+REM 4. Test it works
+python main.py --demo
+
+REM 5. Run the full pipeline
+python main.py
+```
+
+## Manual Setup
+
+### 1. Create Virtual Environment & Install
+
+**Git Bash:**
+```bash
+cd /c/Users/YourName/enrolment
+python3 -m venv venv
+source venv/Scripts/activate
+pip install -r requirements.txt
+```
+
+**CMD/PowerShell:**
+```cmd
+cd C:\Users\YourName\enrolment
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 2. Set Up Google Cloud Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (or select existing)
+3. Enable the **Gmail API**:
+   - Navigate to **APIs & Services > Library**
+   - Search for "Gmail API" and enable it
+4. Configure the **OAuth consent screen**:
+   - Go to **APIs & Services > OAuth consent screen**
+   - Add your email to **Test Users**
+5. Create OAuth2 credentials:
+   - Go to **APIs & Services > Credentials**
+   - Click **Create Credentials > OAuth Client ID**
+   - Choose **Desktop Application**
+   - Download the JSON file
+6. Place it in the project:
+
+**Git Bash:**
+```bash
+cp ~/Downloads/client_secret_*.json credentials/credentials.json
+```
+
+**CMD:**
+```cmd
+copy %USERPROFILE%\Downloads\client_secret_*.json credentials\credentials.json
+```
+
+### 3. Configure Environment (Optional)
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` to customize:
+
+```env
+GMAIL_SEARCH_QUERY=subject:enrolment has:attachment
+MAX_STUDENTS_PER_COURSE=5
+COURSES=Engineering,Design,Sports,IT Systems,Tourism
+```
+
+### 4. Verify Setup
+
+```bash
+python main.py --setup
+```
+
+This checks Python, packages, credentials, and output directory.
+
+## Usage
+
+### Check Setup
+```bash
+python main.py --setup
+```
+
+### Demo Mode (no Gmail needed)
+```bash
+python main.py --demo
+```
+
+### Full Pipeline (Gmail)
+```bash
+python main.py
+```
+
+On first run, a browser window opens for Google authorization. After that, a token is saved locally.
+
+### Process Local Files
+```bash
+python main.py --local enrolment.xlsx
+python main.py --local file1.csv file2.xlsx
+```
+
+### Custom Gmail Search
+```bash
+python main.py --query "from:registrar@school.edu subject:student enrolment"
+```
+
+### Output Format
+```bash
+python main.py --format xlsx     # Excel only
+python main.py --format csv      # CSV only
+python main.py --format both     # Both (default)
+```
 
 ## Expected Input Format
 
-The enrolment spreadsheet should have the following columns:
+The enrolment spreadsheet should have these columns:
 
 | Name | First Choice | Second Choice | Third Choice | Fourth Choice | Fifth Choice |
 |------|-------------|---------------|--------------|---------------|--------------|
@@ -36,115 +175,19 @@ The generated placement summary:
 | 1 | Casey | Engineering |
 | 2 | Jordan | Design |
 
-## Setup
-
-### Prerequisites
-
-- Python 3.10+
-- A Google Cloud project with Gmail API enabled
-- OAuth2 credentials (Desktop application type)
-
-### 1. Clone and Install Dependencies
-
-```bash
-cd student-enrolment-agent
-pip install -r requirements.txt
-```
-
-### 2. Set Up Google Cloud Credentials
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (or select existing)
-3. Enable the **Gmail API**:
-   - Navigate to **APIs & Services > Library**
-   - Search for "Gmail API" and enable it
-4. Create OAuth2 credentials:
-   - Go to **APIs & Services > Credentials**
-   - Click **Create Credentials > OAuth Client ID**
-   - Choose **Desktop Application**
-   - Download the JSON file
-5. Save the credentials file as `credentials/credentials.json`
-
-### 3. Configure Environment
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` to customize:
-
-```env
-# Path to your OAuth2 credentials JSON file
-GOOGLE_CREDENTIALS_PATH=credentials/credentials.json
-
-# Gmail search query to find enrolment emails
-GMAIL_SEARCH_QUERY=subject:enrolment has:attachment
-
-# Maximum number of students per course
-MAX_STUDENTS_PER_COURSE=5
-
-# Output directory for generated placement files
-OUTPUT_DIR=output
-
-# Available courses (comma-separated)
-COURSES=Engineering,Design,Sports,IT Systems,Tourism
-```
-
-### 4. First Run (Authentication)
-
-On the first run, a browser window will open asking you to authorize Gmail access. After authorization, a token is saved locally for future sessions.
-
-## Usage
-
-### Full Pipeline (Gmail Mode)
-
-Fetch enrolment files from Gmail, process them, and generate output:
-
-```bash
-python main.py
-```
-
-With a custom Gmail search query:
-
-```bash
-python main.py --query "from:registrar@school.edu subject:student enrolment"
-```
-
-### Local File Mode
-
-Process spreadsheet files directly (no Gmail needed):
-
-```bash
-python main.py --local enrolment.xlsx
-python main.py --local file1.csv file2.xlsx
-```
-
-### Demo Mode
-
-Run with built-in sample data to verify the system works:
-
-```bash
-python main.py --demo
-```
-
-### Output Format Options
-
-```bash
-python main.py --format xlsx     # Excel only
-python main.py --format csv      # CSV only
-python main.py --format both     # Both (default)
-```
-
 ## Project Structure
 
 ```
-student-enrolment-agent/
+enrolment/
 ├── main.py                    # Main entry point & CLI
+├── setup.sh                   # Setup script (Git Bash)
+├── setup.bat                  # Setup script (Windows CMD)
 ├── requirements.txt           # Python dependencies
 ├── .env.example               # Environment variable template
-├── README.md                  # This file
+├── .gitignore
+├── README.md
 ├── credentials/               # Google OAuth2 credentials (gitignored)
-│   ├── credentials.json       # OAuth2 client secrets
+│   ├── credentials.json       # OAuth2 client secrets (you add this)
 │   └── token.json             # Saved auth token (auto-generated)
 ├── output/                    # Generated placement files
 │   ├── placement_summary_*.xlsx
@@ -152,36 +195,25 @@ student-enrolment-agent/
 │   └── detailed_report_*.xlsx
 └── src/
     ├── __init__.py
-    ├── config.py              # Configuration management
+    ├── config.py              # Configuration (auto-resolves paths)
     ├── gmail_client.py        # Gmail API integration
     ├── spreadsheet_processor.py  # Spreadsheet parsing
     ├── allocation_engine.py   # Course allocation logic
     └── output_generator.py    # Output file generation
 ```
 
-## Allocation Algorithm
-
-The agent uses a **first-come-first-served preference-based** allocation:
-
-1. Students are processed in the order they appear in the spreadsheet
-2. For each student, their **1st choice** is tried first
-3. If that course is full (5 students), the **2nd choice** is tried, and so on
-4. If all preferred courses are full, the student is marked as **unplaced**
-5. The detailed report includes an "Unplaced" sheet listing these students
-
 ## Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| "Credentials file not found" | Download OAuth2 credentials from Google Cloud Console and save to `credentials/credentials.json` |
-| "No enrolment files found" | Adjust the `GMAIL_SEARCH_QUERY` in `.env` to match your emails |
-| "Could not find a 'Name' column" | Ensure your spreadsheet has a column named "Name", "Student Name", or "Student" |
-| "Could not find course choice columns" | Ensure columns contain "Choice" in their name (e.g., "First Choice") |
-| Authentication errors | Delete `credentials/token.json` and re-run to re-authenticate |
+| `ModuleNotFoundError` | Activate your venv first: `source venv/Scripts/activate` (Git Bash) or `venv\Scripts\activate` (CMD) |
+| "Credentials file not found" | Run `python main.py --setup` to see where to place it |
+| "Access blocked" in browser | Add your email to Test Users in Google Cloud Console OAuth screen |
+| No emails found | Adjust `GMAIL_SEARCH_QUERY` in `.env` or use `--query` flag |
+| Path errors on Windows | The code auto-resolves paths - just run from the project folder |
 
 ## Security Notes
 
 - OAuth2 tokens are stored locally in `credentials/token.json`
-- The agent only requests **read-only** access to Gmail (`gmail.readonly` scope)
-- Never commit `credentials/` to version control
-- Add `credentials/` and `output/` to your `.gitignore`
+- The agent only requests **read-only** access to Gmail
+- Never commit `credentials/` to version control (already in .gitignore)
