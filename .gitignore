@@ -1,0 +1,39 @@
+# Credentials and tokens (sensitive)
+credentials/
+*.json
+!.env.example
+
+# Environment variables
+.env
+
+# Output files
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+temp_*/
