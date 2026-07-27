@@ -31,6 +31,7 @@ from src.gmail_client import GmailClient
 from src.spreadsheet_processor import SpreadsheetProcessor
 from src.allocation_engine import AllocationEngine
 from src.output_generator import OutputGenerator
+from src.scheduler import AgentScheduler
 
 
 def run_setup_check():
@@ -325,6 +326,22 @@ def _cleanup_temp_files(file_paths: list):
             pass
 
 
+def run_auto_mode(interval: int = 30, query: str = None, output_format: str = "both"):
+    """Run the agent automatically on a repeating schedule.
+
+    Args:
+        interval: Minutes between each run.
+        query: Custom Gmail search query.
+        output_format: Output file format.
+    """
+    scheduler = AgentScheduler(interval_minutes=interval)
+    scheduler.run(
+        run_full_pipeline,
+        query=query,
+        output_format=output_format,
+    )
+
+
 def main():
     """Main entry point with CLI argument parsing."""
     parser = argparse.ArgumentParser(
@@ -335,9 +352,10 @@ Examples (works in Git Bash, CMD, PowerShell, or Terminal):
 
   python main.py --setup                  # Check your setup first
   python main.py --demo                   # Test with sample data (no Gmail)
-  python main.py                          # Full pipeline (Gmail -> Allocate -> Output)
+  python main.py                          # Full pipeline (one-time run)
+  python main.py --auto                   # Auto mode: runs every 30 minutes
+  python main.py --auto --interval 10     # Auto mode: runs every 10 minutes
   python main.py --local enrolment.xlsx   # Process a local file directly
-  python main.py --local file1.csv file2.xlsx  # Process multiple files
   python main.py --query "from:admin subject:enrolment"  # Custom Gmail search
   python main.py --format csv             # Output as CSV only
         """,
@@ -347,6 +365,18 @@ Examples (works in Git Bash, CMD, PowerShell, or Terminal):
         "--setup",
         action="store_true",
         help="Check setup: Python, packages, credentials, and configuration",
+    )
+    parser.add_argument(
+        "--auto",
+        action="store_true",
+        help="Run continuously, checking Gmail at regular intervals (default: every 30 min)",
+    )
+    parser.add_argument(
+        "--interval",
+        type=int,
+        default=30,
+        metavar="MINUTES",
+        help="Minutes between auto-runs (default: 30). Use with --auto",
     )
     parser.add_argument(
         "--local",
@@ -377,6 +407,12 @@ Examples (works in Git Bash, CMD, PowerShell, or Terminal):
         run_setup_check()
     elif args.demo:
         run_demo()
+    elif args.auto:
+        run_auto_mode(
+            interval=args.interval,
+            query=args.query,
+            output_format=args.format,
+        )
     elif args.local:
         run_local_mode(args.local, output_format=args.format)
     else:
