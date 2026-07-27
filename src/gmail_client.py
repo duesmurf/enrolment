@@ -1,8 +1,12 @@
-"""Gmail integration module for retrieving enrolment documents."""
+"""Gmail integration module for retrieving enrolment documents.
+
+Works cross-platform (Windows Git Bash, CMD, PowerShell, macOS, Linux).
+"""
 
 import os
 import base64
 import tempfile
+from pathlib import Path
 from typing import List, Optional
 
 from google.auth.transport.requests import Request
@@ -28,37 +32,56 @@ class GmailClient:
         """Authenticate with Gmail API using OAuth2.
 
         Uses stored token if available, otherwise initiates OAuth2 flow.
+        On first run, opens a browser for Google account authorization.
         """
         creds = None
+        token_path = Path(Config.TOKEN_PATH)
+        cred_path = Path(Config.GOOGLE_CREDENTIALS_PATH)
 
         # Check for existing token
-        if os.path.exists(Config.TOKEN_PATH):
-            creds = Credentials.from_authorized_user_file(Config.TOKEN_PATH, SCOPES)
+        if token_path.exists():
+            try:
+                creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+                print("[Gmail] Found existing token.")
+            except Exception as e:
+                print(f"[Gmail] Token file invalid, will re-authenticate: {e}")
+                creds = None
 
         # If no valid credentials, initiate auth flow
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 print("[Gmail] Refreshing expired token...")
-                creds.refresh(Request())
-            else:
-                if not os.path.exists(Config.GOOGLE_CREDENTIALS_PATH):
+                try:
+                    creds.refresh(Request())
+                except Exception as e:
+                    print(f"[Gmail] Token refresh failed: {e}")
+                    print("[Gmail] Will re-authenticate from scratch...")
+                    creds = None
+
+            if not creds or not creds.valid:
+                # Need fresh authentication
+                if not cred_path.exists():
+                    # Use the config check which gives platform-specific guidance
+                    Config.check_credentials()
                     raise FileNotFoundError(
-                        f"Credentials file not found at: {Config.GOOGLE_CREDENTIALS_PATH}\n"
-                        "Please download your OAuth2 credentials from Google Cloud Console "
-                        "and place them at the configured path."
+                        f"Credentials file not found at: {cred_path}"
                     )
+
                 print("[Gmail] Starting OAuth2 authentication flow...")
-                print("[Gmail] A browser window will open for authorization.")
+                print("[Gmail] A browser window will open - please sign in with your Google account.")
+                print("[Gmail] (If the browser doesn't open automatically, check the URL in the terminal)")
+                print()
+
                 flow = InstalledAppFlow.from_client_secrets_file(
-                    Config.GOOGLE_CREDENTIALS_PATH, SCOPES
+                    str(cred_path), SCOPES
                 )
                 creds = flow.run_local_server(port=0)
 
             # Save credentials for future use
-            os.makedirs(os.path.dirname(Config.TOKEN_PATH), exist_ok=True)
-            with open(Config.TOKEN_PATH, "w") as token_file:
+            token_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(str(token_path), "w") as token_file:
                 token_file.write(creds.to_json())
-            print("[Gmail] Token saved for future sessions.")
+            print(f"[Gmail] Token saved to: {token_path}")
 
         self.credentials = creds
         self.service = build("gmail", "v1", credentials=creds)
@@ -123,6 +146,8 @@ class GmailClient:
     def get_attachments(self, message_id: str) -> List[dict]:
         """Extract attachment metadata from a message.
 
+        Handles nested MIME parts (multipart messages).
+
         Args:
             message_id: Gmail message ID.
 
@@ -132,17 +157,24 @@ class GmailClient:
         message = self.get_email_details(message_id)
         attachments = []
 
+        def _extract_parts(parts):
+            """Recursively extract attachments from message parts."""
+            for part in parts:
+                filename = part.get("filename", "")
+                if filename and part.get("body", {}).get("attachmentId"):
+                    attachment_info = {
+                        "filename": filename,
+                        "attachment_id": part["body"]["attachmentId"],
+                        "mime_type": part.get("mimeType", ""),
+                        "size": part["body"].get("size", 0),
+                    }
+                    attachments.append(attachment_info)
+                # Check nested parts (multipart messages)
+                if "parts" in part:
+                    _extract_parts(part["parts"])
+
         parts = message.get("payload", {}).get("parts", [])
-        for part in parts:
-            filename = part.get("filename", "")
-            if filename and part.get("body", {}).get("attachmentId"):
-                attachment_info = {
-                    "filename": filename,
-                    "attachment_id": part["body"]["attachmentId"],
-                    "mime_type": part.get("mimeType", ""),
-                    "size": part["body"].get("size", 0),
-                }
-                attachments.append(attachment_info)
+        _extract_parts(parts)
 
         return attachments
 
@@ -180,7 +212,7 @@ class GmailClient:
         temp_file.write(file_data)
         temp_file.close()
 
-        print(f"[Gmail] Downloaded attachment: {filename} -> {temp_file.name}")
+        print(f"[Gmail] Downloaded: {filename} ({len(file_data)} bytes)")
         return temp_file.name
 
     def retrieve_enrolment_files(self, query: Optional[str] = None) -> List[str]:
@@ -194,6 +226,9 @@ class GmailClient:
         """
         downloaded_files = []
         messages = self.search_emails(query)
+
+        if not messages:
+            return downloaded_files
 
         for msg in messages:
             message_id = msg["id"]
@@ -209,7 +244,7 @@ class GmailClient:
                     )
                     downloaded_files.append(file_path)
                 else:
-                    print(f"[Gmail] Skipping non-spreadsheet attachment: {filename}")
+                    print(f"[Gmail] Skipping non-spreadsheet: {filename}")
 
-        print(f"[Gmail] Total enrolment files downloaded: {len(downloaded_files)}")
+        print(f"\n[Gmail] Total enrolment files downloaded: {len(downloaded_files)}")
         return downloaded_files
