@@ -28,6 +28,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config import Config
 from src.gmail_client import GmailClient
+from src.drive_client import DriveClient
 from src.spreadsheet_processor import SpreadsheetProcessor
 from src.allocation_engine import AllocationEngine
 from src.output_generator import OutputGenerator
@@ -326,20 +327,115 @@ def _cleanup_temp_files(file_paths: list):
             pass
 
 
-def run_auto_mode(interval: int = 30, query: str = None, output_format: str = "both"):
+def run_drive_mode(folder_id: str = None, search_query: str = None, output_format: str = "both",
+                   upload_to_drive: bool = False, output_folder_id: str = None):
+    """Run the pipeline fetching files from Google Drive instead of Gmail.
+
+    Args:
+        folder_id: Google Drive folder ID to fetch files from.
+        search_query: Search query for Drive file names.
+        output_format: Output file format ('xlsx', 'csv', or 'both').
+        upload_to_drive: If True, uploads output files to Google Drive.
+        output_folder_id: Drive folder ID for output files.
+    """
+    print("\n" + "=" * 60)
+    print("  STUDENT ENROLMENT AGENT")
+    print("  Google Drive Mode")
+    print("=" * 60)
+    Config.display()
+
+    # Pre-flight check
+    if not Config.check_credentials():
+        sys.exit(1)
+
+    # Step 1: Connect to Google Drive and retrieve enrolment files
+    print("\n[Step 1/4] Connecting to Google Drive...")
+    drive = DriveClient()
+    drive.authenticate()
+
+    # Use folder ID from argument, config, or fall back to search
+    drive_folder = folder_id or Config.DRIVE_FOLDER_ID
+    file_paths = drive.retrieve_enrolment_files(
+        folder_id=drive_folder if drive_folder else None,
+        search_query=search_query,
+    )
+
+    if not file_paths:
+        print("\n[!] No enrolment files found in Google Drive.")
+        if drive_folder:
+            print(f"    Folder ID: '{drive_folder}'")
+            print("    Tip: Make sure the folder contains .xlsx, .xls, .csv, or Google Sheets files.")
+        else:
+            print(f"    Search query: '{search_query or Config.DRIVE_SEARCH_QUERY}'")
+            print("    Tip: Use --drive-folder FOLDER_ID to specify a folder directly.")
+        return
+
+    # Step 2: Process spreadsheet files
+    print(f"\n[Step 2/4] Processing {len(file_paths)} enrolment spreadsheet(s)...")
+    processor = SpreadsheetProcessor()
+    students = processor.process_files(file_paths)
+
+    if not students:
+        print("\n[!] No student records found in the downloaded files.")
+        print("    Tip: Ensure files have columns like 'Name', 'First Choice', etc.")
+        return
+
+    # Step 3: Allocate students to courses
+    print("\n[Step 3/4] Allocating students to courses...")
+    engine = AllocationEngine()
+    result = engine.allocate(students)
+
+    # Step 4: Generate output files
+    print("\n[Step 4/4] Generating output files...")
+    output = OutputGenerator()
+    generated_files = output.generate_all(result, format=output_format)
+    output.print_console_summary(result)
+
+    # Upload to Drive if requested
+    if upload_to_drive:
+        print("\n[Step 5] Uploading output to Google Drive...")
+        drive.upload_output_files(
+            generated_files,
+            folder_id=output_folder_id,
+            convert_to_sheets=True,
+        )
+
+    # Cleanup temp files
+    _cleanup_temp_files(file_paths)
+
+    print(f"\n[Done] Output files saved to: {Config.OUTPUT_DIR}")
+    if upload_to_drive:
+        print("[Done] Output also uploaded to Google Drive!")
+    print("=" * 60)
+
+
+def run_auto_mode(interval: int = 30, query: str = None, output_format: str = "both",
+                  source: str = "gmail", folder_id: str = None, drive_search: str = None):
     """Run the agent automatically on a repeating schedule.
 
     Args:
         interval: Minutes between each run.
         query: Custom Gmail search query.
         output_format: Output file format.
+        source: Data source - 'gmail' or 'drive'.
+        folder_id: Google Drive folder ID (for drive mode).
+        drive_search: Drive search query (for drive mode).
     """
     scheduler = AgentScheduler(interval_minutes=interval)
-    scheduler.run(
-        run_full_pipeline,
-        query=query,
-        output_format=output_format,
-    )
+
+    if source == "drive":
+        scheduler.run(
+            run_drive_mode,
+            folder_id=folder_id,
+            search_query=drive_search,
+            output_format=output_format,
+        )
+    else:
+        scheduler.run(
+            run_full_pipeline,
+            query=query,
+            output_format=output_format,
+        )
 
 
 def main():
@@ -352,9 +448,11 @@ Examples (works in Git Bash, CMD, PowerShell, or Terminal):
 
   python main.py --setup                  # Check your setup first
   python main.py --demo                   # Test with sample data (no Gmail)
-  python main.py                          # Full pipeline (one-time run)
-  python main.py --auto                   # Auto mode: runs every 30 minutes
-  python main.py --auto --interval 10     # Auto mode: runs every 10 minutes
+  python main.py                          # Gmail mode (one-time run)
+  python main.py --drive                  # Google Drive mode (search for files)
+  python main.py --drive --drive-folder FOLDER_ID   # Drive: specific folder
+  python main.py --auto                   # Auto mode: Gmail every 30 minutes
+  python main.py --auto --drive --interval 10       # Auto mode: Drive every 10 min
   python main.py --local enrolment.xlsx   # Process a local file directly
   python main.py --query "from:admin subject:enrolment"  # Custom Gmail search
   python main.py --format csv             # Output as CSV only
@@ -367,9 +465,37 @@ Examples (works in Git Bash, CMD, PowerShell, or Terminal):
         help="Check setup: Python, packages, credentials, and configuration",
     )
     parser.add_argument(
+        "--drive",
+        action="store_true",
+        help="Fetch files from Google Drive instead of Gmail",
+    )
+    parser.add_argument(
+        "--drive-folder",
+        type=str,
+        metavar="FOLDER_ID",
+        help="Google Drive folder ID to fetch files from (use with --drive)",
+    )
+    parser.add_argument(
+        "--drive-search",
+        type=str,
+        metavar="QUERY",
+        help="Search Drive for files containing this text (default: 'enrolment')",
+    )
+    parser.add_argument(
+        "--upload-drive",
+        action="store_true",
+        help="Upload output files to Google Drive (as Google Sheets)",
+    )
+    parser.add_argument(
+        "--output-folder",
+        type=str,
+        metavar="FOLDER_ID",
+        help="Google Drive folder ID to upload output files into",
+    )
+    parser.add_argument(
         "--auto",
         action="store_true",
-        help="Run continuously, checking Gmail at regular intervals (default: every 30 min)",
+        help="Run continuously, checking at regular intervals (default: every 30 min)",
     )
     parser.add_argument(
         "--interval",
@@ -382,7 +508,7 @@ Examples (works in Git Bash, CMD, PowerShell, or Terminal):
         "--local",
         nargs="+",
         metavar="FILE",
-        help="Process local spreadsheet file(s) instead of fetching from Gmail",
+        help="Process local spreadsheet file(s) instead of fetching from Gmail/Drive",
     )
     parser.add_argument(
         "--query",
@@ -398,7 +524,7 @@ Examples (works in Git Bash, CMD, PowerShell, or Terminal):
     parser.add_argument(
         "--demo",
         action="store_true",
-        help="Run a demo with sample data (no Gmail credentials needed)",
+        help="Run a demo with sample data (no credentials needed)",
     )
 
     args = parser.parse_args()
@@ -408,10 +534,22 @@ Examples (works in Git Bash, CMD, PowerShell, or Terminal):
     elif args.demo:
         run_demo()
     elif args.auto:
+        source = "drive" if args.drive else "gmail"
         run_auto_mode(
             interval=args.interval,
             query=args.query,
             output_format=args.format,
+            source=source,
+            folder_id=args.drive_folder,
+            drive_search=args.drive_search,
+        )
+    elif args.drive:
+        run_drive_mode(
+            folder_id=args.drive_folder,
+            search_query=args.drive_search,
+            output_format=args.format,
+            upload_to_drive=args.upload_drive,
+            output_folder_id=args.output_folder,
         )
     elif args.local:
         run_local_mode(args.local, output_format=args.format)
