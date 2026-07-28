@@ -327,13 +327,16 @@ def _cleanup_temp_files(file_paths: list):
             pass
 
 
-def run_drive_mode(folder_id: str = None, search_query: str = None, output_format: str = "both"):
+def run_drive_mode(folder_id: str = None, search_query: str = None, output_format: str = "both",
+                   upload_to_drive: bool = False, output_folder_id: str = None):
     """Run the pipeline fetching files from Google Drive instead of Gmail.
 
     Args:
         folder_id: Google Drive folder ID to fetch files from.
         search_query: Search query for Drive file names.
         output_format: Output file format ('xlsx', 'csv', or 'both').
+        upload_to_drive: If True, uploads output files to Google Drive.
+        output_folder_id: Drive folder ID for output files.
     """
     print("\n" + "=" * 60)
     print("  STUDENT ENROLMENT AGENT")
@@ -385,14 +388,24 @@ def run_drive_mode(folder_id: str = None, search_query: str = None, output_forma
     # Step 4: Generate output files
     print("\n[Step 4/4] Generating output files...")
     output = OutputGenerator()
-    output.generate_placement_file(result, format=output_format)
-    output.generate_detailed_report(result)
+    generated_files = output.generate_all(result, format=output_format)
     output.print_console_summary(result)
+
+    # Upload to Drive if requested
+    if upload_to_drive:
+        print("\n[Step 5] Uploading output to Google Drive...")
+        drive.upload_output_files(
+            generated_files,
+            folder_id=output_folder_id,
+            convert_to_sheets=True,
+        )
 
     # Cleanup temp files
     _cleanup_temp_files(file_paths)
 
     print(f"\n[Done] Output files saved to: {Config.OUTPUT_DIR}")
+    if upload_to_drive:
+        print("[Done] Output also uploaded to Google Drive!")
     print("=" * 60)
 
 
@@ -469,6 +482,17 @@ Examples (works in Git Bash, CMD, PowerShell, or Terminal):
         help="Search Drive for files containing this text (default: 'enrolment')",
     )
     parser.add_argument(
+        "--upload-drive",
+        action="store_true",
+        help="Upload output files to Google Drive (as Google Sheets)",
+    )
+    parser.add_argument(
+        "--output-folder",
+        type=str,
+        metavar="FOLDER_ID",
+        help="Google Drive folder ID to upload output files into",
+    )
+    parser.add_argument(
         "--auto",
         action="store_true",
         help="Run continuously, checking at regular intervals (default: every 30 min)",
@@ -524,6 +548,8 @@ Examples (works in Git Bash, CMD, PowerShell, or Terminal):
             folder_id=args.drive_folder,
             search_query=args.drive_search,
             output_format=args.format,
+            upload_to_drive=args.upload_drive,
+            output_folder_id=args.output_folder,
         )
     elif args.local:
         run_local_mode(args.local, output_format=args.format)

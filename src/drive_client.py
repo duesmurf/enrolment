@@ -13,14 +13,14 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 
 from .config import Config
 
 
-# Google Drive API scopes - read-only access to files
+# Google Drive API scopes - read and write access to files
 SCOPES = [
-    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 
@@ -278,3 +278,96 @@ class DriveClient:
 
         print(f"\n[Drive] Total files downloaded: {len(downloaded_files)}")
         return downloaded_files
+
+    def upload_file(self, local_path: str, folder_id: Optional[str] = None,
+                    convert_to_sheets: bool = False) -> dict:
+        """Upload a local file to Google Drive.
+
+        Args:
+            local_path: Path to the local file to upload.
+            folder_id: Google Drive folder ID to upload into.
+                       If None, uploads to root of Drive.
+            convert_to_sheets: If True, converts .xlsx/.csv to Google Sheets format.
+
+        Returns:
+            Dict with 'id', 'name', and 'webViewLink' of the uploaded file.
+        """
+        if not self.service:
+            raise RuntimeError("Not authenticated. Call authenticate() first.")
+
+        file_name = os.path.basename(local_path)
+        _, ext = os.path.splitext(file_name.lower())
+
+        # Determine MIME type
+        mime_types = {
+            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".xls": "application/vnd.ms-excel",
+            ".csv": "text/csv",
+        }
+        mime_type = mime_types.get(ext, "application/octet-stream")
+
+        # File metadata
+        file_metadata = {"name": file_name}
+
+        if folder_id:
+            file_metadata["parents"] = [folder_id]
+
+        if convert_to_sheets:
+            file_metadata["mimeType"] = "application/vnd.google-apps.spreadsheet"
+
+        # Upload
+        media = MediaFileUpload(local_path, mimetype=mime_type, resumable=True)
+
+        file = (
+            self.service.files()
+            .create(
+                body=file_metadata,
+                media_body=media,
+                fields="id, name, webViewLink",
+            )
+            .execute()
+        )
+
+        link = file.get("webViewLink", f"https://drive.google.com/file/d/{file['id']}")
+        print(f"[Drive] Uploaded: {file_name}")
+        print(f"[Drive]   Link: {link}")
+
+        return file
+
+    def upload_output_files(self, file_paths: List[str], folder_id: Optional[str] = None,
+                            convert_to_sheets: bool = True) -> List[dict]:
+        """Upload multiple output files to Google Drive.
+
+        Args:
+            file_paths: List of local file paths to upload.
+            folder_id: Google Drive folder ID to upload into.
+                       Uses DRIVE_OUTPUT_FOLDER_ID from config if not specified.
+            convert_to_sheets: If True, converts spreadsheets to Google Sheets.
+
+        Returns:
+            List of uploaded file metadata dicts.
+        """
+        upload_folder = folder_id or Config.DRIVE_OUTPUT_FOLDER_ID
+
+        if upload_folder:
+            print(f"[Drive] Uploading {len(file_paths)} file(s) to folder: {upload_folder}")
+        else:
+            print(f"[Drive] Uploading {len(file_paths)} file(s) to Drive root")
+
+        uploaded = []
+        for path in file_paths:
+            if not os.path.exists(path):
+                print(f"[Drive] Skipping (not found): {path}")
+                continue
+            try:
+                result = self.upload_file(
+                    path,
+                    folder_id=upload_folder,
+                    convert_to_sheets=convert_to_sheets,
+                )
+                uploaded.append(result)
+            except Exception as e:
+                print(f"[Drive] ERROR uploading {path}: {e}")
+
+        print(f"\n[Drive] Successfully uploaded: {len(uploaded)} file(s)")
+        return uploaded

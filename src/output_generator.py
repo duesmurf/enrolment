@@ -27,7 +27,7 @@ class OutputGenerator:
 
     def generate_placement_file(
         self, result: AllocationResult, filename: Optional[str] = None, format: str = "xlsx"
-    ) -> str:
+    ) -> list:
         """Generate a placement summary spreadsheet.
 
         Creates a file with columns: S/N, Name, Course
@@ -39,7 +39,7 @@ class OutputGenerator:
             format: Output format - 'xlsx', 'csv', or 'both'. Defaults to 'xlsx'.
 
         Returns:
-            Path to the generated file.
+            List of paths to the generated file(s).
         """
         # Get flat placement list
         placements = result.get_flat_placements()
@@ -75,7 +75,27 @@ class OutputGenerator:
             output_paths.append(csv_path)
             print(f"[Output] Generated CSV file: {csv_path}")
 
-        return output_paths[0] if len(output_paths) == 1 else output_paths
+        return output_paths
+
+    def generate_all(self, result: AllocationResult, format: str = "both") -> list:
+        """Generate all output files and return their paths.
+
+        Args:
+            result: AllocationResult from the allocation engine.
+            format: Output format - 'xlsx', 'csv', or 'both'.
+
+        Returns:
+            List of all generated file paths.
+        """
+        all_files = []
+
+        placement_files = self.generate_placement_file(result, format=format)
+        all_files.extend(placement_files)
+
+        report_path = self.generate_detailed_report(result)
+        all_files.append(report_path)
+
+        return all_files
 
     def generate_detailed_report(
         self, result: AllocationResult, filename: Optional[str] = None
